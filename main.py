@@ -17,7 +17,7 @@ import time
 __PATHFIND_A_STAR__ = 0
 __PATHFIND_FF__ = 1
 
-PATHFIND = __PATHFIND_FF__
+PATHFIND = __PATHFIND_A_STAR__
 
 class Unit(pygame.sprite.Sprite):
   def __init__(self, id, pos, speed):
@@ -47,8 +47,9 @@ class Unit(pygame.sprite.Sprite):
     try:
       current_square = get_square_at(int(self.pos[0]), int(self.pos[1]))
       self.speed = 100 / current_square.cost
-    except:
-      print("Error", self.id, self.pos, self.original_xy, self.original_pos, self.nodes_moved, self.last_pos)
+    except Exception as e:
+      print("Error", e, self.id, self.pos, self.original_xy, self.original_pos, self.nodes_moved, self.last_pos)
+      # print("next square", self.FF_next_sq.xy, self.get_angle(self.FF_next_sq.rect.center), self.FF_next_sq.FF_next_sq.xy, self.get_angle(self.FF_next_sq.FF_next_sq.rect.center))
       # current_square = get_square_at(int(self.pos[0]), int(self.pos[1]))
       self.speed = 0
       self.debug = True
@@ -77,6 +78,22 @@ class Unit(pygame.sprite.Sprite):
     if not out_of_bounds:
       self.last_pos = self.rect.center
       self.move_to(move_pos)
+    else:
+      self.pos = self.rect.center
+      print("out of bounds", move_pos)
+      
+  # if x1 < 0:
+  #   x = 0
+  # elif x1 >= (x_squares * 16):
+  #   x = (x_squares * 16)-1
+  # else:
+  #   x = x1
+  # if y1 < 0:
+  #   y = 0
+  # elif y1 >= (y_squares * 16):
+  #   y = (y_squares * 16)-1
+  # else:
+  #   y = y1
   def move_A_star(self, dt):
     move_pos = self.pos
     if len(self.pathL) > 0:
@@ -98,6 +115,8 @@ class Unit(pygame.sprite.Sprite):
         movement_v.normalize_ip()
         # move 100px per second in the direction we're facing
         move_pos += movement_v * dt * self.speed
+        if self.debug:
+          print("movepos +", movement_v * dt * self.speed, movement_v, dt, self.speed)
     return move_pos
   def move_FF(self, dt, world):
     move_pos = self.pos
@@ -121,7 +140,7 @@ class Unit(pygame.sprite.Sprite):
   def start_FF(self, world):
     self.FF_next_sq = world[self.xy()]
   def move_to(self, move_pos):
-    self.set_angle(self.target)
+    # self.set_angle(self.target)
     self.rect = self.image.get_rect(center=move_pos)
     self.pos = move_pos
 
@@ -156,7 +175,7 @@ class Square(pygame.sprite.Sprite):
     self.img_FF8 = pygame.image.load('data/FF8.png').convert_alpha()
     self.img_FF9 = pygame.image.load('data/FF9.png').convert_alpha()
     self.img_a_star, self.rect = load_png("square.png")
-    self.image = self.img_a_star
+    self.image = self.img_a_star.copy()
     # self.image.fill([0/cost, 255/cost, 0/cost])
     darken = 255 / cost
     self.image.fill((darken, darken, darken), special_flags=pygame.BLEND_RGB_MULT)
@@ -181,29 +200,34 @@ class Square(pygame.sprite.Sprite):
     cost = random.randint(1, 8)
     self.cost = cost
     self.image.fill([0/cost, 255/cost, 0/cost])
+    # self.FF_next_sq = None
+    # self.FF_cost = 0xFFFFFFFF
+    # self.image = self.img_a_star
   def set_color(self, rgb):
     self.image.fill([rgb[0]//self.cost, rgb[1]//self.cost, rgb[2]//self.cost])
   def set_FF_img(self, xy):
     direction = (self.xy[0] - xy[0], self.xy[1] - xy[1])
-    # print(self.xy, "direction", direction)
+    if(self.xy == (0, 0)):
+      print(self.xy, "direction", direction, self.cost)
     if direction == (1, 0):
-      self.image = self.img_FF4
+      self.image = self.img_FF4.copy()
     elif direction == (1, 1):
-      self.image = self.img_FF7
+      self.image = self.img_FF7.copy()
     elif direction == (1, -1):
-      self.image = self.img_FF1
+      self.image = self.img_FF1.copy()
     elif direction == (0, 1):
-      self.image = self.img_FF8
+      self.image = self.img_FF8.copy()
     elif direction == (0, 0):
-      self.image = self.img_a_star
+      print("this is target")
+      self.image = self.img_a_star.copy()
     elif direction == (0, -1):
-      self.image = self.img_FF2
+      self.image = self.img_FF2.copy()
     elif direction == (-1, 1):
-      self.image = self.img_FF9
+      self.image = self.img_FF9.copy()
     elif direction == (-1, 0):
-      self.image = self.img_FF6
+      self.image = self.img_FF6.copy()
     elif direction == (-1, -1):
-      self.image = self.img_FF3#
+      self.image = self.img_FF3.copy()
     darken = 255 / self.cost
     self.image.fill((darken, darken, darken), special_flags=pygame.BLEND_RGB_MIN)
 def calc_distance(start, end, difficulty = 1):
@@ -266,8 +290,10 @@ def calculate_flowfield(world:dict, target):#world is dict, target is xy
     sq.FF_cost = 0xFFFFFFFF
   world[target].FF_cost = 0
   square_list = [world[target]]
+  finished_nodes = set(target)
   while len(square_list) > 0:
     current_xy = square_list.pop(0).xy
+    finished_nodes.add(current_xy)
 
     neighbours = get_neighbours(world, world[current_xy], x_squares, y_squares)
 
@@ -278,6 +304,8 @@ def calculate_flowfield(world:dict, target):#world is dict, target is xy
           square_list.append(n)
         n.FF_cost = new_cost
   #flow field
+  print("FF len", len(finished_nodes))
+  # print(finished_nodes)
   for sq in world.values():
     if sq == world[target]:
       sq.FF_next_sq = None
@@ -304,11 +332,23 @@ def load_png(name):
 def get_square_idx_at(x1, y1):
   return x1//16 + y1//16 * x_squares
 def get_square_at(x1, y1):
+  if x1 < 0:
+    x = 0
+  elif x1 >= (x_squares * 16):
+    x = (x_squares * 16)-1
+  else:
+    x = x1
+  if y1 < 0:
+    y = 0
+  elif y1 >= (y_squares * 16):
+    y = (y_squares * 16)-1
+  else:
+    y = y1
   try:
-    return squares[get_square_idx_at(x1, y1)]
+    return squares[get_square_idx_at(x, y)]
   except:
-    print("get_square_at failed with", x1, y1, get_square_idx_at(x1, y1), len(squares))
-    return squares[get_square_idx_at(x1, y1)]
+    print("get_square_at failed with", x, y, get_square_idx_at(x, y), len(squares))
+    return squares[get_square_idx_at(x, y)]
 def main():
   # Initialise screen
   pygame.init()
@@ -324,10 +364,9 @@ def main():
   background.fill((250, 250, 250))
 
   # units = [Unit(0, (100, 100), 100), Unit(1, (8, 8),50), Unit(2, (8, 8),100)]
-  # units = [Unit(0, (100, 100), 100), Unit(1, (150, 150), 100)]
+  # units = [Unit(0, (8, 8), 100), Unit(1, (150, 150), 100)]
 
   units = list()
-
   for i in range(25):
     units.append(Unit(i, (random.randint(8, x_squares * 16 - 8), random.randint(8, y_squares * 16 - 8)), 100))
 
@@ -362,19 +401,23 @@ def main():
       if event.type == QUIT:
         return
       elif event.type == MOUSEBUTTONDOWN:
+        print(event)
         pos = pygame.mouse.get_pos()
         pos = pos[0]//16, pos[1]//16
+        print("pos", pos)
+        # squares_dict[pos].randomize_cost()
         start_time = time.time()
-        # print(pos)
-        #measure A* time here
-        # for u in units:
-        #   u.set_finish(pos, squares_dict)
-        get_square_at(pos[0], pos[1]).randomize_cost()
-        calculate_flowfield(squares_dict, pos)
+        if PATHFIND == __PATHFIND_A_STAR__:
+          #measure A* time here
+          for u in units:
+            u.set_finish(pos, squares_dict)
+        elif PATHFIND == __PATHFIND_FF__:
+          calculate_flowfield(squares_dict, pos)
         print("--- %s seconds ---" % (time.time() - start_time))
         for u in units:
           u.start_FF(squares_dict)
       elif event.type == TEXTINPUT and event.__dict__['text'] == ' ':
+        print(event)
         for u in units:
           u.move_to((random.randint(8, x_squares * 16 - 8), random.randint(8, y_squares * 16 - 8)))
         for sq in squares:
