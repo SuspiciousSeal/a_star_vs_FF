@@ -17,12 +17,14 @@ import time
 __PATHFIND_A_STAR__ = 0
 __PATHFIND_FF__ = 1
 
-PATHFIND = __PATHFIND_A_STAR__
+PATHFIND = __PATHFIND_FF__
 
 class Unit(pygame.sprite.Sprite):
-  def __init__(self, id, pos, speed):
+  def __init__(self, id, pos, speed, squares_dict, squares_list):
     pygame.sprite.Sprite.__init__(self)
     self.id = id
+    self.squares_dict = squares_dict
+    self.squares_list = squares_list
     self.image = pygame.image.load('data/unit.png').convert_alpha()
     if id == 1:
       self.image.fill([255, 255, 0])
@@ -36,23 +38,15 @@ class Unit(pygame.sprite.Sprite):
     self.speed = speed
     self.pathL = deque()
     self.FF_next_sq = None
-    self.original_xy = self.xy()
-    self.original_pos = pos
-    self.nodes_moved = 0
-    self.last_pos = pos
-    self.debug = False
   def update(self, dt, units, world):
     # update speed
     # current_square = world[self.xy()]
-    try:
-      current_square = get_square_at(int(self.pos[0]), int(self.pos[1]))
-      self.speed = 100 / current_square.cost
-    except Exception as e:
-      print("Error", e, self.id, self.pos, self.original_xy, self.original_pos, self.nodes_moved, self.last_pos)
-      # print("next square", self.FF_next_sq.xy, self.get_angle(self.FF_next_sq.rect.center), self.FF_next_sq.FF_next_sq.xy, self.get_angle(self.FF_next_sq.FF_next_sq.rect.center))
-      # current_square = get_square_at(int(self.pos[0]), int(self.pos[1]))
-      self.speed = 0
-      self.debug = True
+    current_square = get_square_at_coordinate(world, (int(self.pos[0]), int(self.pos[1])), x_squares, y_squares)
+    self.speed = 100 / current_square.cost
+    # try:
+    # except Exception as e:
+    #   print("Error", e, self.id, self.pos)
+    #   self.speed = 0
 
     move_pos = None
     if PATHFIND == __PATHFIND_A_STAR__:
@@ -80,24 +74,11 @@ class Unit(pygame.sprite.Sprite):
       self.move_to(move_pos)
     else:
       self.pos = self.rect.center
-      print("out of bounds", move_pos)
+      # print("out of bounds", move_pos)
       
-  # if x1 < 0:
-  #   x = 0
-  # elif x1 >= (x_squares * 16):
-  #   x = (x_squares * 16)-1
-  # else:
-  #   x = x1
-  # if y1 < 0:
-  #   y = 0
-  # elif y1 >= (y_squares * 16):
-  #   y = (y_squares * 16)-1
-  # else:
-  #   y = y1
   def move_A_star(self, dt):
     move_pos = self.pos
     if len(self.pathL) > 0:
-      self.nodes_moved += 1
       next_sq = self.pathL.pop()
       if calc_distance(self, next_sq) < 2:
         self.jumped = False
@@ -107,16 +88,12 @@ class Unit(pygame.sprite.Sprite):
       # else:
         # print("target", next_sq.xy)
       angle = self.get_angle(next_sq.rect.center)
-      if self.debug:
-        print("debug next sq", next_sq.xy, angle)
       movement_v = angle * 1
       move_pos = self.pos
       if movement_v.length() > 0:
         movement_v.normalize_ip()
         # move 100px per second in the direction we're facing
         move_pos += movement_v * dt * self.speed
-        if self.debug:
-          print("movepos +", movement_v * dt * self.speed, movement_v, dt, self.speed)
     return move_pos
   def move_FF(self, dt, world):
     move_pos = self.pos
@@ -155,8 +132,8 @@ class Unit(pygame.sprite.Sprite):
     return pygame.Vector2(xy[0] - self.rect.center[0], xy[1] - self.rect.center[1])
   def set_target(self, xy):
     self.target = pygame.Vector2(xy)
-  def set_finish(self, xy, squares_dict):
-    self.pathL = deque(a_star(get_square_at(self.rect.centerx, self.rect.centery), squares_dict, squares_dict[(xy[0], xy[1])], x_squares, y_squares)[0])
+  def set_finish(self, squares_dict, xy, x_amount, y_amount):
+    self.pathL = deque(a_star(get_square_at_coordinate(squares_dict, self.rect.center, x_amount, y_amount), squares_dict, squares_dict[(xy[0], xy[1])], x_amount, y_amount)[0])
     for i in self.pathL:
       i.set_color((255, 0, 0))
   def xy(self):
@@ -207,8 +184,6 @@ class Square(pygame.sprite.Sprite):
     self.image.fill([rgb[0]//self.cost, rgb[1]//self.cost, rgb[2]//self.cost])
   def set_FF_img(self, xy):
     direction = (self.xy[0] - xy[0], self.xy[1] - xy[1])
-    if(self.xy == (0, 0)):
-      print(self.xy, "direction", direction, self.cost)
     if direction == (1, 0):
       self.image = self.img_FF4.copy()
     elif direction == (1, 1):
@@ -218,7 +193,6 @@ class Square(pygame.sprite.Sprite):
     elif direction == (0, 1):
       self.image = self.img_FF8.copy()
     elif direction == (0, 0):
-      print("this is target")
       self.image = self.img_a_star.copy()
     elif direction == (0, -1):
       self.image = self.img_FF2.copy()
@@ -284,7 +258,7 @@ def a_star(start, world, end, size_x, size_y):
           openSet.put(new)
   print("A* failed")
 #based on https://leifnode.com/2013/12/flow-field-pathfinding/
-def calculate_flowfield(world:dict, target):#world is dict, target is xy
+def calculate_flowfield(world:dict, target, x_amount, y_amount):#world is dict, target is xy
   #integration field
   for sq in world.values():
     sq.FF_cost = 0xFFFFFFFF
@@ -295,7 +269,7 @@ def calculate_flowfield(world:dict, target):#world is dict, target is xy
     current_xy = square_list.pop(0).xy
     finished_nodes.add(current_xy)
 
-    neighbours = get_neighbours(world, world[current_xy], x_squares, y_squares)
+    neighbours = get_neighbours(world, world[current_xy], x_amount, y_amount)
 
     for n in neighbours:
       new_cost = world[current_xy].FF_cost + n.cost
@@ -304,16 +278,13 @@ def calculate_flowfield(world:dict, target):#world is dict, target is xy
           square_list.append(n)
         n.FF_cost = new_cost
   #flow field
-  print("FF len", len(finished_nodes))
-  # print(finished_nodes)
   for sq in world.values():
     if sq == world[target]:
       sq.FF_next_sq = None
       sq.set_FF_img(sq.xy)
       continue
-    neighbours = get_neighbours(world, world[sq.xy], x_squares, y_squares)
+    neighbours = get_neighbours(world, world[sq.xy], x_amount, y_amount)
     shortest_n = min(neighbours, key=attrgetter("FF_cost"))
-    # print(sq.xy, "shortest", shortest_n.xy)
     sq.FF_next_sq = shortest_n
     sq.set_FF_img(shortest_n.xy)
 def load_png(name):
@@ -329,30 +300,75 @@ def load_png(name):
     print(f"Cannot load image: {fullname}")
     raise SystemExit
   return image, image.get_rect()
-def get_square_idx_at(x1, y1):
-  return x1//16 + y1//16 * x_squares
-def get_square_at(x1, y1):
-  if x1 < 0:
+def get_square_idx_at(x, y, x_amount):
+  return x//16 + y//16 * x_amount
+def get_square_at_coordinate(world:dict, xy, x_amount, y_amount):
+  if xy[0] < 0:
     x = 0
-  elif x1 >= (x_squares * 16):
-    x = (x_squares * 16)-1
+  elif xy[0] >= (x_amount * 16):
+    x = (x_amount * 16)-1
   else:
-    x = x1
-  if y1 < 0:
+    x = xy[0]
+  if xy[1] < 0:
     y = 0
-  elif y1 >= (y_squares * 16):
-    y = (y_squares * 16)-1
+  elif xy[1] >= (y_amount * 16):
+    y = (y_amount * 16)-1
   else:
-    y = y1
-  try:
-    return squares[get_square_idx_at(x, y)]
-  except:
-    print("get_square_at failed with", x, y, get_square_idx_at(x, y), len(squares))
-    return squares[get_square_idx_at(x, y)]
+    y = xy[1]
+  return world[(int(x//16), int(y//16))]
+
+def test_make_units(units_amount, world_list, world):
+  units = list()
+  for i in range(units_amount):
+    units.append(Unit(i, (random.randint(8, x_squares * 16 - 8), random.randint(8, y_squares * 16 - 8)), 100, world, world_list))
+  return units
+def test_make_squares(x_amount, y_amount):
+  squares = []
+  squares_dict = {}
+  for ysq in range(x_amount):
+    for xsq in range(y_amount):
+      s = Square(16 * xsq, 16 * ysq, random.randint(1, 8))
+      squares.append(s)
+      squares_dict[(xsq, ysq)] = s
+  return squares, squares_dict
+def test_ff():
+  #FF with different size worlds
+  f = open("metrics/FF_world_size.csv", "w")
+  f.write("size,time\n")
+  for i in range(10, 101, 5):
+    print("test_ff", i)
+    world_list, world = test_make_squares(i, i)
+    runs = 5
+    start_time = time.time()
+    for r in range(runs):
+      calculate_flowfield(world, random.choice(world_list).xy, i, i)
+    end_time = time.time() - start_time
+    f.write(f"{i},{end_time / runs}\n")
+  f.close()
+
+def test_A_star():
+  #FF with different size worlds
+  f = open("metrics/A_star.csv", "w")
+  f.write("size,units,total_time,unit_time\n")
+  for i in [10, 20, 50, 100]:
+    world_list, world = test_make_squares(i, i)
+    for u_amount in [1, 5, 50, 100, 1000, 5000, 10000]:
+      print("test_A_star", i, u_amount)
+      units = test_make_units(u_amount, world_list, world)
+      runs = 5
+      start_time = time.time()
+      for r in range(runs):
+        target = random.choice(world_list)
+        for u in units:
+          u.set_finish(world, target.xy, i, i)
+      end_time = time.time() - start_time
+      f.write(f"{i},{len(units)},{end_time / runs},{end_time / runs / len(units)}\n")
+  f.close()
+
 def main():
   # Initialise screen
   pygame.init()
-  global x_squares, y_squares, units, squares
+  global x_squares, y_squares, x_squares, y_squares
   x_squares = 100
   y_squares = 50 
   screen = pygame.display.set_mode((x_squares * 16, y_squares * 16))
@@ -362,13 +378,12 @@ def main():
   background = pygame.Surface(screen.get_size())
   background = background.convert()
   background.fill((250, 250, 250))
-
+  
+  # test2()
   # units = [Unit(0, (100, 100), 100), Unit(1, (8, 8),50), Unit(2, (8, 8),100)]
   # units = [Unit(0, (8, 8), 100), Unit(1, (150, 150), 100)]
 
-  units = list()
-  for i in range(25):
-    units.append(Unit(i, (random.randint(8, x_squares * 16 - 8), random.randint(8, y_squares * 16 - 8)), 100))
+  
 
   squares = []
   squares_dict = {}
@@ -377,6 +392,10 @@ def main():
       s = Square(16 * xsq, 16 * ysq, random.randint(1, 8))
       squares.append(s)
       squares_dict[(xsq, ysq)] = s
+
+  units = list()
+  for i in range(25):
+    units.append(Unit(i, (random.randint(8, x_squares * 16 - 8), random.randint(8, y_squares * 16 - 8)), 100, squares_dict, squares))
   
   unitsprites = pygame.sprite.RenderPlain(units)
   sqprites = pygame.sprite.RenderPlain(squares)
@@ -393,9 +412,18 @@ def main():
 
   clock, dt = pygame.time.Clock(), 0
 
-
   # Event loop
   while True:
+    for sq in squares:
+      screen.blit(background, sq.rect, sq.rect)
+      sq.update()
+    sqprites.draw(screen)
+
+    for unit in units:
+      screen.blit(background, unit.rect, unit.rect)
+      unit.update(dt, units, squares_dict)
+    unitsprites.draw(screen)
+
     for event in pygame.event.get():
       # print(event)
       if event.type == QUIT:
@@ -410,9 +438,9 @@ def main():
         if PATHFIND == __PATHFIND_A_STAR__:
           #measure A* time here
           for u in units:
-            u.set_finish(pos, squares_dict)
+            u.set_finish(squares_dict, pos, x_squares, y_squares)
         elif PATHFIND == __PATHFIND_FF__:
-          calculate_flowfield(squares_dict, pos)
+          calculate_flowfield(squares_dict, pos, x_squares, y_squares)
         print("--- %s seconds ---" % (time.time() - start_time))
         for u in units:
           u.start_FF(squares_dict)
@@ -423,16 +451,6 @@ def main():
         for sq in squares:
           sq.randomize_cost()
 
-
-    for sq in squares:
-      screen.blit(background, sq.rect, sq.rect)
-      sq.update()
-    sqprites.draw(screen)
-
-    for unit in units:
-      screen.blit(background, unit.rect, unit.rect)
-      unit.update(dt, units, squares_dict)
-    unitsprites.draw(screen)
     pygame.display.flip()
     dt = clock.tick(60) / 1000
 
